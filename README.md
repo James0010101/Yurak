@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/James0010101/MedAI-Longevity-Platform/main/assets/header.svg" alt="Yurak" width="100%"/>
+<img src="https://raw.githubusercontent.com/James0010101/Yurak/main/assets/header.svg" alt="Yurak" width="100%"/>
 
 <br/>
 
@@ -51,7 +51,7 @@ The life estimate is derived only from heart age via WHO tables, so height and w
 
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/James0010101/MedAI-Longevity-Platform/main/assets/architecture.svg" alt="System Architecture" width="100%"/>
+<img src="https://raw.githubusercontent.com/James0010101/Yurak/main/assets/architecture.svg" alt="System Architecture" width="100%"/>
 
 </div>
 
@@ -116,8 +116,8 @@ One-page A4 PDF report + HL7 FHIR R4 bundle with verified LOINC codes. Unit conv
 
 ```bash
 # Clone and install
-git clone https://github.com/James0010101/MedAI-Longevity-Platform.git
-cd MedAI-Longevity-Platform
+git clone https://github.com/James0010101/Yurak.git
+cd Yurak
 python -m venv venv && venv\Scripts\activate  # Windows
 pip install -r requirements.txt
 

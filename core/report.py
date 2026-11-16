@@ -304,7 +304,7 @@ def generate_pdf_report(
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
 
     qr_drawing = Drawing(42, 42)
-    qr = QrCodeWidget("https://github.com/James0010101/MedAI-Longevity-Platform")
+    qr = QrCodeWidget("https://github.com/James0010101/Yurak")
     qr.barWidth = 42
     qr.barHeight = 42
     qr_drawing.add(qr)

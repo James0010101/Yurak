@@ -56,7 +56,7 @@ def test_app_name_is_yurak_everywhere():
     for lang in SUPPORTED_LANGUAGES:
         data = load_translations(lang)
         assert data["app_title"] == "Yurak"
-        leftovers = [k for k, v in data.items() if "MedAI" in v and "MedAI-Longevity-Platform" not in v]
+        leftovers = [k for k, v in data.items() if "MedAI" in v]
         assert not leftovers, f"{lang}: old brand in {leftovers}"
 
 
