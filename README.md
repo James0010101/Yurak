@@ -9,6 +9,7 @@
 [![Tests](https://img.shields.io/badge/Tests-50%20passed-00e68a?style=flat-square)](#-reproduce-from-scratch)
 [![License](https://img.shields.io/badge/License-Research-8b949e?style=flat-square)](#)
 [![Trilingual](https://img.shields.io/badge/i18n-RU%20·%20UZ%20·%20EN-ffb800?style=flat-square)](#)
+[![Live app](https://img.shields.io/badge/Live%20app-yurak--uz.streamlit.app-0E6E6B?style=flat-square&logo=streamlit&logoColor=white)](https://yurak-uz.streamlit.app)
 
 **Cardiovascular risk prediction platform for Uzbekistan.**
 <br/>
