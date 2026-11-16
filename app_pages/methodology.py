@@ -12,11 +12,15 @@ from core.config import MODELS_DIR
 from core.i18n import get_current_language, t
 
 lang = get_current_language()
-st.title(f"📊 {t('meth_title', lang=lang)}")
+st.title(t("meth_title", lang=lang))
 
-# 1. Medical Disclaimer
+st.warning(f"**{t('meth_disclaimer_title', lang=lang)}:** {t('meth_disclaimer_body', lang=lang)}",
+           icon=":material/info:")
+
+# What each input is for — so nothing on the form is there "just because"
+st.subheader(t("meth_sec_inputs", lang=lang))
 with st.container(border=True):
-    st.warning(f"⚠️ **{t('meth_disclaimer_title', lang=lang)}:** {t('meth_disclaimer_body', lang=lang)}")
+    st.markdown(t("meth_inputs_desc", lang=lang))
 
 # Load Real Audited Metrics from models/metrics.json
 metrics_file = MODELS_DIR / "metrics.json"
@@ -67,7 +71,7 @@ with tab_metrics1:
                 y=alt.Y("BCE Loss:Q", title=t("method_loss_axis_y", lang=lang)),
                 color=alt.Color(
                     f"{lbl_sample}:N",
-                    scale=alt.Scale(domain=[lbl_train, lbl_val], range=["#006c49", "#ba1a1a"]),
+                    scale=alt.Scale(domain=[lbl_train, lbl_val], range=["#0E6E6B", "#A8203A"]),
                     title=lbl_sample,
                 ),
                 tooltip=[lbl_epoch, "BCE Loss", lbl_sample],
@@ -159,7 +163,7 @@ with tab_metrics3:
 
         line_model = (
             alt.Chart(df_cal)
-            .mark_line(point=True, color="#006c49", strokeWidth=2.5)
+            .mark_line(point=True, color="#0E6E6B", strokeWidth=2.5)
             .encode(
                 x=alt.X(f"{lbl_pred}:Q", scale=alt.Scale(domain=[0, 0.5])),
                 y=alt.Y(f"{lbl_true}:Q", scale=alt.Scale(domain=[0, 0.5])),

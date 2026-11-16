@@ -1,5 +1,5 @@
 """
-streamlit_app.py — Main Entry Point for MedAI Longevity Platform.
+streamlit_app.py — Main entry point for Yurak.
 """
 from pathlib import Path
 import sys
@@ -11,11 +11,10 @@ if str(BASE_DIR) not in sys.path:
 
 import streamlit as st
 from core.i18n import SUPPORTED_LANGUAGES, get_current_language, set_current_language, t
-from core.branding import BRAND_CSS, FAVICON_PATH, logo_header_html
+from core.branding import BRAND_CSS, FAVICON_PATH, LOGO_PNG_PATH
 
-# 1. Page Configuration (Must be first Streamlit command)
 st.set_page_config(
-    page_title="MedAI Longevity Platform",
+    page_title="Yurak",
     page_icon=str(FAVICON_PATH),
     layout="wide",
     initial_sidebar_state="expanded",
@@ -23,25 +22,17 @@ st.set_page_config(
 
 st.markdown(BRAND_CSS, unsafe_allow_html=True)
 
-# 2. Session State Initialization
 if "lang" not in st.session_state:
     st.session_state["lang"] = "ru"
-
 if "units" not in st.session_state:
     st.session_state["units"] = "mmol"
 
-# 3. Sidebar Controls: Language & Units
 with st.sidebar:
-    st.markdown(logo_header_html("MedAI Longevity", size=40, title_tag="h3"), unsafe_allow_html=True)
-    st.caption("Cardiovascular Screening & Longevity Platform")
-    st.divider()
+    st.logo(str(LOGO_PNG_PATH), size="large")
+    st.markdown("### Yurak")
+    st.caption(t("app_subtitle"))
 
-    # Language Selector
-    lang_labels = {
-        "ru": "Русский",
-        "uz": "O'zbekcha (Lotin)",
-        "en": "English",
-    }
+    lang_labels = {"ru": "Русский", "uz": "Oʻzbekcha", "en": "English"}
     current_lang = get_current_language()
     selected_lang = st.selectbox(
         t("lang_select"),
@@ -54,47 +45,26 @@ with st.sidebar:
         set_current_language(selected_lang)
         st.rerun()
 
-    # Measurement Units
-    unit_labels = {
-        "mmol": t("unit_mmol"),
-        "mgdl": t("unit_mgdl"),
-    }
-    selected_unit = st.radio(
+    unit_labels = {"mmol": t("unit_mmol"), "mgdl": t("unit_mgdl")}
+    selected_unit = st.segmented_control(
         t("unit_select"),
         options=["mmol", "mgdl"],
         format_func=lambda x: unit_labels.get(x, x),
-        index=0 if st.session_state["units"] == "mmol" else 1,
+        default=st.session_state["units"],
         key="unit_selector",
     )
-    st.session_state["units"] = selected_unit
+    if selected_unit:
+        st.session_state["units"] = selected_unit
 
     st.divider()
     st.caption(t("footer_disclaimer"))
 
-# 4. Multi-Page Navigation
 pages = [
-    st.Page(
-        "app_pages/overview.py",
-        title=t("nav_overview"),
-        icon="🎬",
-        default=True,
-    ),
-    st.Page(
-        "app_pages/screening.py",
-        title=t("nav_screening"),
-        icon="🩺",
-    ),
-    st.Page(
-        "app_pages/methodology.py",
-        title=t("nav_methodology"),
-        icon="📊",
-    ),
-    st.Page(
-        "app_pages/about.py",
-        title=t("nav_about"),
-        icon="ℹ️",
-    ),
+    st.Page("app_pages/overview.py", title=t("nav_overview"), icon=":material/play_circle:", default=True),
+    st.Page("app_pages/screening.py", title=t("nav_screening"), icon=":material/cardiology:"),
+    st.Page("app_pages/methodology.py", title=t("nav_methodology"), icon=":material/science:"),
+    st.Page("app_pages/about.py", title=t("nav_about"), icon=":material/info:"),
 ]
 
-nav = st.navigation(pages, position="sidebar")
+nav = st.navigation(pages, position="top")
 nav.run()

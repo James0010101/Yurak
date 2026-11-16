@@ -12,6 +12,39 @@ def test_app_loads_without_exceptions():
     assert not at.exception, f"App crashed with exceptions: {at.exception}"
 
 
+@pytest.mark.parametrize("page", ["app_pages/screening.py", "app_pages/methodology.py", "app_pages/about.py"])
+def test_every_page_renders(page):
+    at = AppTest.from_file(ENTRYPOINT)
+    at.run(timeout=30)
+    at.switch_page(page).run(timeout=60)
+    assert not at.exception, f"{page} crashed: {at.exception}"
+
+
+def test_screening_shows_heart_age_and_reacts_to_presets():
+    at = AppTest.from_file(ENTRYPOINT)
+    at.run(timeout=30)
+    at.switch_page("app_pages/screening.py").run(timeout=60)
+    labels = [m.label for m in at.metric]
+    assert "Риск ИБС, 10 лет" in labels
+    chd_before = next(m.value for m in at.metric if m.label == "Риск ИБС, 10 лет")
+
+    at.button(key="btn_preset_a").click().run(timeout=60)
+    assert not at.exception
+    chd_after = next(m.value for m in at.metric if m.label == "Риск ИБС, 10 лет")
+    assert chd_after != chd_before  # healthy profile gives a different (lower) risk
+
+
+def test_prior_cvd_blocks_results():
+    at = AppTest.from_file(ENTRYPOINT)
+    at.run(timeout=30)
+    at.switch_page("app_pages/screening.py").run(timeout=60)
+    at.checkbox(key="cvd_0_mmol").check()
+    at.button[-1].click()  # form submit sits after the preset buttons
+    at.run(timeout=60)
+    assert not at.exception
+    assert not any(m.label == "Риск ИБС, 10 лет" for m in at.metric)
+
+
 def test_switch_language_smoke():
     at = AppTest.from_file(ENTRYPOINT)
     at.run(timeout=15)

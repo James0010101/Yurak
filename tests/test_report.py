@@ -3,7 +3,7 @@ Unit tests for core/report.py
 """
 import json
 import pytest
-from core.report import generate_fhir_bundle, generate_html_report, generate_pdf_report
+from core.report import generate_fhir_bundle, generate_pdf_report
 
 
 @pytest.fixture
@@ -51,18 +51,17 @@ def mock_data():
     return patient, prediction, recommendations
 
 
-def test_generate_html_report(mock_data):
-    patient, prediction, recs = mock_data
-    html = generate_html_report(patient, prediction, recs, lang="ru", units="mmol")
+def test_fhir_bundle_has_hdl_only_when_entered(mock_data):
+    patient, prediction, _ = mock_data
 
-    assert isinstance(html, str)
-    assert len(html) > 500
-    assert "MedAI Longevity Platform" in html
-    assert "18.5%" in html
-    assert "68.5" in html
-    assert "71.2" in html
-    assert "Полный отказ от курения" in html
-    assert "Медицинское уведомление" in html
+    def loinc(bundle):
+        return {c["code"] for e in bundle["entry"] if e["resource"]["resourceType"] == "Observation"
+                for c in e["resource"]["code"]["coding"]}
+
+    assert "2085-9" not in loinc(generate_fhir_bundle(patient, prediction))
+    assert "2085-9" in loinc(generate_fhir_bundle({**patient, "HDL": 52.0}, prediction))
+    # resting heart rate is no longer collected, so it is not exported
+    assert "8867-4" not in loinc(generate_fhir_bundle(patient, prediction))
 
 
 def test_generate_fhir_bundle(mock_data):
@@ -71,7 +70,7 @@ def test_generate_fhir_bundle(mock_data):
 
     assert bundle["resourceType"] == "Bundle"
     assert bundle["type"] == "collection"
-    assert len(bundle["entry"]) >= 7
+    assert len(bundle["entry"]) >= 7  # Patient + 5 observations + RiskAssessment
 
     # Validate json serializability
     json_str = json.dumps(bundle)

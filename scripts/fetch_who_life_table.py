@@ -45,7 +45,7 @@ def fetch_primary():
     resp = requests.get(
         PRIMARY_API_URL,
         params={"$filter": "SpatialDim eq 'UZB'"},
-        headers={"User-Agent": "MedAI-Platform/1.0"},
+        headers={"User-Agent": "Yurak/1.0"},
         timeout=15
     )
     resp.raise_for_status()

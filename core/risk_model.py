@@ -14,7 +14,13 @@ from core.clinical import (
     calculate_framingham_heart_age,
     calculate_uzbekistan_life_expectancy,
 )
-from core.config import FEATURE_NAMES, MODELS_DIR
+from core.config import (
+    DEFAULT_HDL_MGDL,
+    DIABETES_GLUCOSE_MGDL,
+    FEATURE_NAMES,
+    FIXED_HEART_RATE,
+    MODELS_DIR,
+)
 from neural_network import MultiTaskNeuralNetwork
 
 logger = logging.getLogger(__name__)
@@ -60,7 +66,7 @@ def patient_dict_to_raw_vector(patient: Dict[str, Any]) -> np.ndarray:
         float(patient.get("sysBP", 120.0)),
         float(patient.get("diaBP", 80.0)),
         float(patient.get("BMI", 25.0)),
-        float(patient.get("heartRate", 72.0)),
+        float(patient.get("heartRate", FIXED_HEART_RATE)),
         float(patient.get("glucose", 90.0)),
     ]
     return np.array(raw_values, dtype=np.float64)
@@ -83,9 +89,20 @@ def get_optimal_healthy_profile(patient: Dict[str, Any]) -> Dict[str, Any]:
         "sysBP": 115.0,
         "diaBP": 75.0,
         "BMI": 22.0,
-        "heartRate": 70.0,
+        "heartRate": FIXED_HEART_RATE,
         "glucose": 85.0,
     }
+
+
+def has_diabetes(patient: Dict[str, Any]) -> bool:
+    """
+    Diabetes for the heart-age formula: a known diagnosis OR fasting glucose
+    >= 7.0 mmol/L (126 mg/dL). Previously the formula ignored glucose entirely,
+    so an undiagnosed person with glucose 9 mmol/L got the heart age of a non-diabetic.
+    """
+    known = int(patient.get("diabetes", 0)) == 1
+    glucose = float(patient.get("glucose", 90.0))
+    return known or glucose >= DIABETES_GLUCOSE_MGDL
 
 
 def normalize_features(
@@ -140,9 +157,10 @@ def predict_patient(
     bp_meds = int(patient.get("BPMeds", 0))
     tot_chol = float(patient.get("totChol", 200.0))
     smoker = int(patient.get("currentSmoker", 0))
+    hdl = patient.get("HDL")
+    hdl = float(hdl) if hdl else DEFAULT_HDL_MGDL
 
-    # Known diabetes flag or model screened diabetes > 0.5
-    diabetes_flag = int(patient.get("diabetes", 1 if p_dm >= 0.5 else 0))
+    diabetes_flag = int(has_diabetes(patient))
 
     heart_age = calculate_framingham_heart_age(
         age=age,
@@ -150,7 +168,7 @@ def predict_patient(
         sbp=sbp,
         bp_meds=bp_meds,
         tot_chol=tot_chol,
-        hdl=45.0,
+        hdl=hdl,
         smoker=smoker,
         diabetes=diabetes_flag,
     )
@@ -167,12 +185,13 @@ def predict_patient(
         sbp=sbp,
         bp_meds=bp_meds,
         tot_chol=tot_chol,
-        hdl=45.0,
+        hdl=hdl,
         smoker=smoker,
         diabetes=diabetes_flag,
     )
 
     return {
+        "diabetes_flag": diabetes_flag,
         "p_chd": round(p_chd, 4),
         "p_chd_std": round(chd_std, 4),
         "p_diabetes": round(p_dm, 4),
@@ -302,8 +321,12 @@ def compute_risk_trajectory(
 ) -> List[Dict[str, Any]]:
     """
     Computes risk trajectories across future years under:
-    1) Current trajectory (aging naturally with current lifestyle and risk factors)
+    1) Current trajectory (only age changes; all other markers stay as entered)
     2) Optimized trajectory (with beneficial interventions applied)
+
+    No physiological drift is assumed: an earlier version added +0.4 mmHg SBP per
+    year, a number without a verified source. Ages above 70 are outside the
+    training cohort and are flagged with `extrapolated`.
     """
     if model is None:
         model = load_risk_model()
@@ -317,14 +340,12 @@ def compute_risk_trajectory(
         # 1. Current scenario
         curr_p = deepcopy(patient)
         curr_p["age"] = sim_age
-        # Physiological drift: untreated SBP increases ~0.4 mmHg per year of aging
-        if not curr_p.get("BPMeds", 0):
-            curr_p["sysBP"] = min(220.0, float(patient.get("sysBP", 120.0)) + 0.4 * y)
 
         res_curr = predict_patient(curr_p, model=model)
         trajectory.append({
             "years_ahead": y,
             "age": sim_age,
+            "extrapolated": sim_age > 70.0,
             "scenario": "current",
             "p_chd_percent": round(res_curr["p_chd"] * 100.0, 1),
             "heart_age": res_curr["heart_age"],
@@ -343,6 +364,7 @@ def compute_risk_trajectory(
             trajectory.append({
                 "years_ahead": y,
                 "age": sim_age,
+                "extrapolated": sim_age > 70.0,
                 "scenario": "improved",
                 "p_chd_percent": round(res_opt["p_chd"] * 100.0, 1),
                 "heart_age": res_opt["heart_age"],

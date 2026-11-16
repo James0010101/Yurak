@@ -1,5 +1,5 @@
 {
-  "model_name": "MedAI Multi-Task Cardiovascular & Diabetes Screener",
+  "model_name": "Yurak multi-task cardiovascular & diabetes screener",
   "version": "2.0.0",
   "architecture": "Feedforward MLP [13 -> 32 -> 16 -> 2 heads (chd, diabetes)]",
   "activation": "Swish",

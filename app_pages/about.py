@@ -5,7 +5,7 @@ import streamlit as st
 from core.i18n import get_current_language, t
 
 lang = get_current_language()
-st.title(f"ℹ️ {t('about_title', lang=lang)}")
+st.title(t("about_title", lang=lang))
 st.caption(t("about_mission", lang=lang))
 
 # 1. Problem Statement

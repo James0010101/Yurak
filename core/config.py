@@ -1,5 +1,5 @@
 """
-Configuration constants and paths for MedAI Longevity Platform.
+Configuration constants and paths for Yurak.
 """
 from pathlib import Path
 
@@ -46,7 +46,17 @@ FEATURE_PERCENTILES_1_99 = {
 }
 
 # Clinical reference defaults (in mg/dL for lab values)
-DEFAULT_HDL_MGDL = 45.0  # ~1.16 mmol/L
+DEFAULT_HDL_MGDL = 45.0  # ~1.16 mmol/L, used when the person does not know their HDL
+
+# Resting heart rate is a model input, but its effect on the trained network is
+# negligible (≈1.5 pp across the 60–95 bpm range, with the wrong sign), so the
+# app no longer asks for it. It is fixed at the healthy-reference value, which
+# also makes its Integrated Gradients attribution exactly zero.
+FIXED_HEART_RATE = 70.0
+
+# Fasting glucose at or above this value (mg/dL, = 7.0 mmol/L) counts as diabetes
+# for the D'Agostino heart-age formula even without a prior diagnosis (WHO criterion).
+DIABETES_GLUCOSE_MGDL = 126.0
 REFERENCE_OPTIMAL_PROFILE = {
     "sysBP": 120.0,
     "diaBP": 80.0,

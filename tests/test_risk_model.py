@@ -139,6 +139,32 @@ def test_compute_risk_trajectory(sample_high_risk_patient):
         assert imp["heart_age"] < curr["heart_age"]
 
 
+def test_high_glucose_counts_as_diabetes_in_heart_age(sample_high_risk_patient):
+    # Undiagnosed person with fasting glucose 160 mg/dL (8.9 mmol/L): the heart-age
+    # formula must treat them as diabetic, exactly like a known diagnosis.
+    undiagnosed = {**sample_high_risk_patient, "glucose": 160.0, "diabetes": 0}
+    diagnosed = {**sample_high_risk_patient, "glucose": 160.0, "diabetes": 1}
+    normal = {**sample_high_risk_patient, "glucose": 100.0, "diabetes": 0}
+    ha_undiag = predict_patient(undiagnosed)["heart_age"]
+    assert ha_undiag == predict_patient(diagnosed)["heart_age"]
+    assert ha_undiag > predict_patient(normal)["heart_age"]
+
+
+def test_entered_hdl_changes_heart_age(sample_high_risk_patient):
+    low = predict_patient({**sample_high_risk_patient, "HDL": 30.0})["heart_age"]
+    default = predict_patient(sample_high_risk_patient)["heart_age"]
+    high = predict_patient({**sample_high_risk_patient, "HDL": 70.0})["heart_age"]
+    assert low > default > high
+
+
+def test_trajectory_only_ages(sample_high_risk_patient):
+    # No invented blood-pressure drift: at year 0 the trajectory equals the base prediction
+    traj = compute_risk_trajectory(sample_high_risk_patient, years_ahead=(0, 20))
+    base = predict_patient(sample_high_risk_patient)
+    assert traj[0]["p_chd_percent"] == round(base["p_chd"] * 100.0, 1)
+    assert traj[-1]["extrapolated"] is True  # 55 + 20 > 70
+
+
 def test_group_attributions_merges_smoking_features():
     from core.risk_model import group_attributions
 

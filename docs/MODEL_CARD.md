@@ -1,7 +1,7 @@
-# Model Card: MedAI Multi-Task Cardiovascular & Diabetes Screener
+# Model Card: Yurak Multi-Task Cardiovascular & Diabetes Screener
 
 ## Model Details
-- **Developer:** MedAI Longevity Platform Initiative
+- **Developer:** Yurak Initiative
 - **Model Version:** 2.0.0
 - **Model Date:** October 2026
 - **Model Type:** Multi-Task Feedforward Neural Network (Pure NumPy Implementation)
@@ -32,11 +32,11 @@
 ### 10-Year Coronary Heart Disease (CHD) Head
 | Model / Benchmark | ROC-AUC (95% Bootstrap CI) | Brier Score |
 |:---|:---:|:---:|
-| **MedAI Neural Network** | **0.675** [0.607, 0.735] | **0.1210** |
+| **Yurak Neural Network** | **0.675** [0.607, 0.735] | **0.1210** |
 | Logistic Regression Baseline | 0.698 [0.638, 0.758] | 0.1185 |
 | D'Agostino 2008 General CVD Reference | 0.700 [0.641, 0.760] | — |
 
-*Clinical Decision Characteristics for MedAI Neural Network:*
+*Clinical Decision Characteristics for Yurak Neural Network:*
 - **10% Risk Threshold (Intermediate Risk):**
   - Sensitivity: **75.26%**
   - Specificity: **53.62%**
@@ -49,7 +49,7 @@
 ### Diabetes Screening Head
 | Model | ROC-AUC (95% Bootstrap CI) | Brier Score |
 |:---|:---:|:---:|
-| **MedAI Neural Network** | **0.884** [0.738, 0.998] | **0.0242** |
+| **Yurak Neural Network** | **0.884** [0.738, 0.998] | **0.0242** |
 | Logistic Regression Baseline | 0.827 | 0.0261 |
 
 ## Ethical Considerations & Fairness

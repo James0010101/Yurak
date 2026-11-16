@@ -1,5 +1,5 @@
 """
-Training script for MedAI Multi-Task Neural Network.
+Training script for the Yurak multi-task neural network.
 1. Trains multi-task network [13 -> 32 -> 16 -> 2 heads] with early stopping.
 2. Trains LogisticRegression baselines for both heads.
 3. Computes rigorous test metrics: ROC-AUC with 95% bootstrap CI, Brier score, calibration curve,
@@ -332,7 +332,7 @@ def train_and_evaluate():
 
     # Model Card
     model_card = {
-        "model_name": "MedAI Multi-Task Cardiovascular & Diabetes Screener",
+        "model_name": "Yurak multi-task cardiovascular & diabetes screener",
         "version": "2.0.0",
         "architecture": f"Feedforward MLP [13 -> 32 -> 16 -> 2 heads (chd, diabetes)]",
         "activation": "Swish",

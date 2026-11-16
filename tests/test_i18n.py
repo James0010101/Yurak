@@ -47,16 +47,22 @@ def test_translation_function_and_kwargs():
     assert t("field_age", lang="en") == "Age (years)"
 
     # Kwargs interpolation
-    interpolated = t("card_chd_uncertainty", lang="ru", val="2.5")
-    assert "±2.5%" in interpolated
+    assert t("verdict_head", lang="ru", ha="56") == "Возраст сердца: 56"
+    assert "56" in t("verdict_head", lang="uz", ha="56")
+    assert "+2.5" in t("life_vs_avg", lang="en", val="+2.5")
 
-    interpolated_uz = t("card_chd_uncertainty", lang="uz", val="2.5")
-    assert "±2.5%" in interpolated_uz
+
+def test_app_name_is_yurak_everywhere():
+    for lang in SUPPORTED_LANGUAGES:
+        data = load_translations(lang)
+        assert data["app_title"] == "Yurak"
+        leftovers = [k for k, v in data.items() if "MedAI" in v and "MedAI-Longevity-Platform" not in v]
+        assert not leftovers, f"{lang}: old brand in {leftovers}"
 
 
 def test_fallback_behavior():
     # Unknown language code should fallback to Russian
-    assert t("field_sex", lang="de") == "Биологический пол"
+    assert t("field_sex", lang="de") == "Пол"
 
     # Non-existent key should return key itself
     assert t("completely_nonexistent_key_12345", lang="en") == "completely_nonexistent_key_12345"

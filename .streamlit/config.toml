@@ -1,9 +1,32 @@
 [theme]
-primaryColor = "#2F6BFF"
-backgroundColor = "#F5F9FE"
-secondaryBackgroundColor = "#FFFFFF"
-textColor = "#1E2F52"
-font = "sans serif"
+base = "light"
+primaryColor = "#0E6E6B"
+backgroundColor = "#F3F6F5"
+secondaryBackgroundColor = "#E5ECEA"
+textColor = "#152238"
+borderColor = "#CFDAD7"
+linkColor = "#0E6E6B"
+showWidgetBorder = true
+baseRadius = "10px"
+buttonRadius = "10px"
+
+font = "Onest:https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800&display=swap"
+headingFont = "Onest:https://fonts.googleapis.com/css2?family=Onest:wght@600;700;800&display=swap"
+headingFontWeights = [800, 700, 700, 600, 600, 600]
+headingFontSizes = ["2.4rem", "1.6rem", "1.25rem", "1.05rem", "0.95rem", "0.85rem"]
+
+redColor = "#A8203A"
+orangeColor = "#B5650D"
+greenColor = "#2E7D4F"
+blueColor = "#2A5B9E"
+chartCategoricalColors = ["#0E6E6B", "#A8203A", "#B5650D", "#2A5B9E", "#6B7A90"]
+
+[theme.sidebar]
+backgroundColor = "#152238"
+secondaryBackgroundColor = "#1F2F4A"
+textColor = "#E9EEF2"
+borderColor = "#2C3E5C"
+primaryColor = "#5FC3BC"
 
 [client]
 toolbarMode = "minimal"
