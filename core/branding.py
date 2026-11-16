@@ -60,8 +60,14 @@ BRAND_CSS = f"""
 .yurak-brand {{ display:flex; align-items:center; gap:14px; margin:0 0 2px 0; }}
 .yurak-word {{ font-size:2rem; font-weight:800; letter-spacing:-0.03em; line-height:1; color:{BRAND_INK}; }}
 .yurak-sub {{ font-size:.95rem; color:#4A5A70; margin-top:4px; }}
-.yurak-verdict {{ font-size:2.4rem; font-weight:800; letter-spacing:-0.03em; line-height:1.1; color:{BRAND_INK}; margin:0; }}
-.yurak-verdict-sub {{ font-size:1.05rem; color:#4A5A70; margin:8px 0 0 0; line-height:1.45; max-width:62ch; }}
-@media (max-width: 640px) {{ .yurak-verdict {{ font-size:1.8rem; }} .yurak-word {{ font-size:1.6rem; }} }}
+.yurak-verdict {{ font-size:2.6rem; font-weight:800; letter-spacing:-0.03em; line-height:1.05; color:{BRAND_INK}; margin:0; }}
+.yurak-verdict-sub {{ font-size:1.05rem; color:#3E4D63; margin:10px 0 0 0; line-height:1.45; max-width:62ch; }}
+/* Result headline: a tinted panel whose left edge carries the risk band colour. */
+[class*="st-key-verdict_"] {{ padding:22px 24px 18px; border-radius:14px; background:#FFFFFF;
+  border:1px solid #CFDAD7; border-left-width:6px; }}
+.st-key-verdict_low {{ border-left-color:{RISK_LOW}; }}
+.st-key-verdict_mid {{ border-left-color:{RISK_MID}; }}
+.st-key-verdict_high {{ border-left-color:{RISK_HIGH}; }}
+@media (max-width: 640px) {{ .yurak-verdict {{ font-size:1.9rem; }} .yurak-word {{ font-size:1.5rem; }} }}
 </style>
 """

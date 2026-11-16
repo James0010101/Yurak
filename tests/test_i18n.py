@@ -49,7 +49,7 @@ def test_translation_function_and_kwargs():
     # Kwargs interpolation
     assert t("verdict_head", lang="ru", ha="56") == "Возраст сердца: 56"
     assert "56" in t("verdict_head", lang="uz", ha="56")
-    assert "+2.5" in t("life_vs_avg", lang="en", val="+2.5")
+    assert "103" in t("emergency_body", lang="uz")
 
 
 def test_app_name_is_yurak_everywhere():

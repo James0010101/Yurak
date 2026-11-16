@@ -11,7 +11,9 @@ import numpy as np
 
 from core.clinical import (
     calculate_dagostino_risk,
+    calculate_dagostino_risk_bmi,
     calculate_framingham_heart_age,
+    calculate_heart_age_bmi,
     calculate_uzbekistan_life_expectancy,
 )
 from core.config import (
@@ -101,8 +103,24 @@ def has_diabetes(patient: Dict[str, Any]) -> bool:
     so an undiagnosed person with glucose 9 mmol/L got the heart age of a non-diabetic.
     """
     known = int(patient.get("diabetes", 0)) == 1
-    glucose = float(patient.get("glucose", 90.0))
-    return known or glucose >= DIABETES_GLUCOSE_MGDL
+    glucose = patient.get("glucose", 90.0)
+    return known or (glucose is not None and float(glucose) >= DIABETES_GLUCOSE_MGDL)
+
+
+# Lab values a person may not know. When missing, the network gets the training
+# median (exactly how missing values were imputed during training) and heart age
+# switches to the D'Agostino BMI model, which needs no blood test.
+OPTIONAL_LABS = ("totChol", "glucose")
+
+
+def fill_missing_labs(patient: Dict[str, Any], model: MultiTaskNeuralNetwork) -> Dict[str, Any]:
+    meta = model.metadata or {}
+    medians = dict(zip(meta.get("feature_names", FEATURE_NAMES), meta.get("medians", [])))
+    filled = dict(patient)
+    for k in OPTIONAL_LABS:
+        if filled.get(k) is None and k in medians:
+            filled[k] = float(medians[k])
+    return filled
 
 
 def normalize_features(
@@ -120,77 +138,71 @@ def normalize_features(
 def predict_patient(
     patient: Dict[str, Any],
     model: Optional[MultiTaskNeuralNetwork] = None,
-    n_mc: int = 30
+    n_mc: int = 0
 ) -> Dict[str, Any]:
     """
     Full clinical evaluation:
-    - 10-year CHD risk (NN output with MC Dropout uncertainty)
-    - Diabetes screening probability (NN output with MC Dropout uncertainty)
-    - Heart age (D'Agostino 2008 closed-form formula)
-    - Life expectancy (WHO Uzbekistan life table with heart age acceleration)
+    - 10-year CHD risk (neural network)
+    - Diabetes screening probability (neural network)
+    - Heart age (D'Agostino 2008: lipid model, or BMI model when cholesterol is unknown)
+    - Life expectancy (WHO Uzbekistan life table read at heart age)
     - General CVD risk (D'Agostino 2008 benchmark)
+
+    MC Dropout uncertainty is only computed when n_mc > 0: the UI no longer shows
+    it, and 30 extra forward passes per simulation made every rerun slow.
     """
     if model is None:
         model = load_risk_model()
+
+    chol_known = patient.get("totChol") is not None
+    glucose_known = patient.get("glucose") is not None
+    filled = fill_missing_labs(patient, model)
 
     meta = model.metadata or {}
     means = np.array(meta.get("means", [0.0] * len(FEATURE_NAMES)), dtype=np.float64)
     stds = np.array(meta.get("stds", [1.0] * len(FEATURE_NAMES)), dtype=np.float64)
 
-    raw_vec = patient_dict_to_raw_vector(patient)
+    raw_vec = patient_dict_to_raw_vector(filled)
     norm_vec = normalize_features(raw_vec, means, stds).reshape(1, -1)
 
-    # Deterministic inference
     probs = model.predict(norm_vec)
     p_chd = float(probs["chd"][0, 0])
     p_dm = float(probs["diabetes"][0, 0])
 
-    # Epistemic uncertainty via MC Dropout
-    unc = model.predict_with_uncertainty(norm_vec, n_mc=n_mc, seed=42)
-    chd_std = float(unc["chd"]["std"][0, 0])
-    dm_std = float(unc["diabetes"]["std"][0, 0])
+    chd_std = dm_std = 0.0
+    if n_mc > 0:
+        unc = model.predict_with_uncertainty(norm_vec, n_mc=n_mc, seed=42)
+        chd_std = float(unc["chd"]["std"][0, 0])
+        dm_std = float(unc["diabetes"]["std"][0, 0])
 
-    # Clinical formulas
     age = float(patient.get("age", 50.0))
     sex = int(patient.get("male", 1))
     sbp = float(patient.get("sysBP", 120.0))
     bp_meds = int(patient.get("BPMeds", 0))
-    tot_chol = float(patient.get("totChol", 200.0))
     smoker = int(patient.get("currentSmoker", 0))
     hdl = patient.get("HDL")
     hdl = float(hdl) if hdl else DEFAULT_HDL_MGDL
-
     diabetes_flag = int(has_diabetes(patient))
 
-    heart_age = calculate_framingham_heart_age(
-        age=age,
-        sex=sex,
-        sbp=sbp,
-        bp_meds=bp_meds,
-        tot_chol=tot_chol,
-        hdl=hdl,
-        smoker=smoker,
-        diabetes=diabetes_flag,
-    )
+    if chol_known:
+        tot_chol = float(patient["totChol"])
+        kw = dict(age=age, sex=sex, sbp=sbp, bp_meds=bp_meds, tot_chol=tot_chol, hdl=hdl,
+                  smoker=smoker, diabetes=diabetes_flag)
+        heart_age = calculate_framingham_heart_age(**kw)
+        dagostino_cvd = calculate_dagostino_risk(**kw)
+        method = "lab"
+    else:
+        bmi = float(patient.get("BMI", 25.0))
+        kw = dict(age=age, sex=sex, sbp=sbp, bp_meds=bp_meds, bmi=bmi, smoker=smoker, diabetes=diabetes_flag)
+        heart_age = calculate_heart_age_bmi(**kw)
+        dagostino_cvd = calculate_dagostino_risk_bmi(**kw)
+        method = "bmi"
 
-    life_exp = calculate_uzbekistan_life_expectancy(
-        age=age,
-        sex=sex,
-        heart_age=heart_age,
-    )
-
-    dagostino_cvd = calculate_dagostino_risk(
-        age=age,
-        sex=sex,
-        sbp=sbp,
-        bp_meds=bp_meds,
-        tot_chol=tot_chol,
-        hdl=hdl,
-        smoker=smoker,
-        diabetes=diabetes_flag,
-    )
+    life_exp = calculate_uzbekistan_life_expectancy(age=age, sex=sex, heart_age=heart_age)
 
     return {
+        "heart_age_method": method,
+        "glucose_known": glucose_known,
         "diabetes_flag": diabetes_flag,
         "p_chd": round(p_chd, 4),
         "p_chd_std": round(chd_std, 4),
@@ -218,6 +230,8 @@ def explain_prediction(
     """
     if model is None:
         model = load_risk_model()
+    missing = [k for k in OPTIONAL_LABS if patient.get(k) is None]
+    patient = fill_missing_labs(patient, model)
 
     meta = model.metadata or {}
     means = np.array(meta.get("means", [0.0] * len(FEATURE_NAMES)), dtype=np.float64)
@@ -227,6 +241,10 @@ def explain_prediction(
     norm_patient = normalize_features(raw_patient, means, stds)
 
     healthy_ref = get_optimal_healthy_profile(patient)
+    # An unknown lab value is not a risk factor of this person: give the reference
+    # the same imputed value so its attribution is exactly zero.
+    for k in missing:
+        healthy_ref[k] = patient[k]
     raw_base = patient_dict_to_raw_vector(healthy_ref)
     norm_base = normalize_features(raw_base, means, stds)
 

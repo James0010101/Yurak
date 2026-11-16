@@ -1,9 +1,13 @@
 """
-app_pages/screening.py — Yurak: the screening form and its results.
+app_pages/screening.py — Yurak: the check-up form and its results.
 
-Left column: a form with only the inputs that change a result.
-Right column: heart-age headline, three result cards, ranked steps you can
-switch on and off, and tabs with the details (factors, markers, 20-year view, report).
+Designed for a person, not a clinician:
+- blood tests are optional ("don't know" works: heart age then uses the
+  D'Agostino BMI model, the network gets training medians);
+- red-flag values are shown first, before any score;
+- every result ends with a plain "what to do next";
+- people the models were not built for (prior heart attack/stroke, age outside
+  32–70) get guidance and their markers instead of made-up numbers.
 """
 import json
 
@@ -11,8 +15,8 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from core.branding import BRAND_ANOR, BRAND_TEAL, logo_header_html
-from core.clinical import calculate_life_expectancy_estimate
+from core.alerts import URGENT, find_alerts, next_step_key
+from core.branding import BRAND_ANOR, BRAND_TEAL
 from core.config import FIXED_HEART_RATE, MAX_TRAIN_AGE, MIN_TRAIN_AGE
 from core.i18n import get_current_language, t
 from core.recommendations import generate_recommendations
@@ -30,14 +34,14 @@ from core.units import from_mgdl, to_mgdl
 lang = get_current_language()
 units = st.session_state.get("units", "mmol")
 
-# Demo profiles (lab values in mg/dL, the model's native unit). HDL None = "not known".
+# Demo profiles (lab values in mg/dL). None = "don't know".
 PRESETS = {
     "preset_a": {"male": 0, "age": 35, "cigsPerDay": 0, "BPMeds": 0, "sysBP": 115, "diaBP": 75,
                  "height": 165, "weight": 58.0, "totChol": 170.0, "HDL": 60.0, "glucose": 85.0, "diabetes": 0},
     "preset_b": {"male": 1, "age": 52, "cigsPerDay": 20, "BPMeds": 0, "sysBP": 142, "diaBP": 88,
                  "height": 176, "weight": 84.0, "totChol": 225.0, "HDL": None, "glucose": 98.0, "diabetes": 0},
     "preset_c": {"male": 0, "age": 60, "cigsPerDay": 0, "BPMeds": 1, "sysBP": 155, "diaBP": 92,
-                 "height": 160, "weight": 75.5, "totChol": 240.0, "HDL": 50.0, "glucose": 105.0, "diabetes": 0},
+                 "height": 160, "weight": 75.5, "totChol": None, "HDL": None, "glucose": None, "diabetes": 0},
     "preset_d": {"male": 1, "age": 66, "cigsPerDay": 25, "BPMeds": 1, "sysBP": 168, "diaBP": 98,
                  "height": 174, "weight": 96.0, "totChol": 260.0, "HDL": 35.0, "glucose": 145.0, "diabetes": 1},
 }
@@ -52,6 +56,7 @@ def with_derived(p: dict) -> dict:
     p["heartRate"] = FIXED_HEART_RATE
     p["prevalentStroke"] = 0
     p.setdefault("prior_cvd", 0)
+    p.setdefault("family_history", 0)
     return p
 
 
@@ -75,9 +80,8 @@ def trajectory(items: tuple, changes: tuple):
 
 @st.cache_data(max_entries=32, show_spinner=False)
 def pdf_bytes(items: tuple, lang_: str, units_: str):
-    p = dict(items)
     pred, recs, _ = evaluate(items)
-    return generate_pdf_report(p, pred, recs, lang=lang_, units=units_)
+    return generate_pdf_report(dict(items), pred, recs, lang=lang_, units=units_)
 
 
 def load_preset(key: str) -> None:
@@ -85,7 +89,7 @@ def load_preset(key: str) -> None:
     st.session_state["form_ver"] += 1
 
 
-if "patient_data" not in st.session_state or "height" not in st.session_state["patient_data"]:
+if "patient_data" not in st.session_state or "family_history" not in st.session_state["patient_data"]:
     st.session_state["patient_data"] = with_derived(PRESETS["preset_b"])
 st.session_state.setdefault("form_ver", 0)
 
@@ -95,35 +99,86 @@ uk = f"{ver}_{units}"
 u_label = {"en": "mmol/L", "uz": "mmol/l"}.get(lang, "ммоль/л") if units == "mmol" else "mg/dL"
 
 
-def lab_input(label_key: str, analyte: str, mg_value, mmol_range, mg_range, optional=False):
-    """Number input in the selected unit; returns mg/dL (or None if left empty)."""
-    label = f"{t(label_key, lang=lang)}, {u_label}"
-    help_key = f"{label_key}_help"
+def lab_input(label_key: str, analyte: str, mg_value, mmol_range, mg_range):
+    """Optional number input in the selected unit; returns mg/dL or None (= don't know)."""
     if units == "mmol":
-        lo, hi, step, fmt = mmol_range[0], mmol_range[1], mmol_range[2], "%.2f" if mmol_range[2] < 0.1 else "%.1f"
+        lo, hi, step = mmol_range
+        fmt = "%.2f" if step < 0.1 else "%.1f"
         val = None if mg_value is None else round(from_mgdl(mg_value, analyte, "mmol"), 2)
     else:
-        lo, hi, step, fmt = mg_range[0], mg_range[1], mg_range[2], "%.0f"
+        lo, hi, step = mg_range
+        fmt = "%.0f"
         val = None if mg_value is None else round(float(mg_value))
     if val is not None:
         val = float(min(hi, max(lo, val)))
     entered = st.number_input(
-        label, min_value=float(lo), max_value=float(hi), value=val, step=float(step), format=fmt,
-        placeholder=t("hdl_placeholder", lang=lang) if optional else None,
-        help=t(help_key, lang=lang), key=f"{analyte}_{label_key}_{uk}",
+        f"{t(label_key, lang=lang)}, {u_label}", min_value=float(lo), max_value=float(hi), value=val,
+        step=float(step), format=fmt, placeholder=t("hdl_placeholder", lang=lang),
+        help=t(f"{label_key}_help", lang=lang), key=f"{label_key}_{uk}",
     )
-    if entered is None:
-        return None
-    return to_mgdl(entered, analyte, units)
+    return None if entered is None else to_mgdl(entered, analyte, units)
 
 
-# ---------------------------------------------------------------- header
-st.markdown(logo_header_html(t("app_title", lang=lang), t("app_subtitle", lang=lang)), unsafe_allow_html=True)
+def markers_table(patient: dict) -> pd.DataFrame:
+    """Each entered marker next to its guideline range. Works without the model."""
+    sex_s = str(patient["male"])
+    status = {"ok": t("status_badge_ok", lang=lang), "warn": t("status_badge_warn", lang=lang),
+              "high": t("status_badge_high", lang=lang)}
+    bp_unit = {"en": "mmHg", "uz": "mm sim.ust."}.get(lang, "мм рт. ст.")
+
+    def lab_txt(mg, analyte):
+        return f"{from_mgdl(mg, analyte, units):.2f} {u_label}" if units == "mmol" else f"{mg:.0f} mg/dL"
+
+    rows = [(t("bio_marker_bp", lang=lang), f"{patient['sysBP']:.0f} / {patient['diaBP']:.0f} {bp_unit}",
+             classify("bp", patient["sysBP"], sex=sex_s, secondary_value=patient["diaBP"], lang=lang))]
+    for key, analyte, marker in (("field_tot_chol", "totChol", "totChol"), ("field_hdl", "totChol", "hdl"),
+                                 ("field_glucose", "glucose", "glucose")):
+        field = {"field_tot_chol": "totChol", "field_hdl": "HDL", "field_glucose": "glucose"}[key]
+        value = patient.get(field)
+        if value is None:
+            rows.append((t(key, lang=lang), t("not_entered", lang=lang),
+                         {"level": None, "normal_range": "", "source": ""}))
+        else:
+            rows.append((t(key, lang=lang), lab_txt(value, analyte), classify(marker, value, sex=sex_s, lang=lang)))
+    bmi_c = {**classify("bmi", patient["BMI"], sex=sex_s, lang=lang), "normal_range": "18.5–24.9 kg/m²"}
+    rows.append((t("bio_marker_bmi", lang=lang), f"{patient['BMI']:.1f} kg/m²", bmi_c))
+    smoke = {"level": "high" if patient["currentSmoker"] else "ok",
+             "normal_range": t("bio_cessation_norm", lang=lang), "source": "WHO FCTC / ESC 2021"}
+    rows.append((t("bio_marker_smoker", lang=lang),
+                 t("bio_smoker_val", lang=lang, cigs=int(patient["cigsPerDay"])) if patient["currentSmoker"]
+                 else t("bio_nonsmoker_val", lang=lang), smoke))
+    return pd.DataFrame([
+        {t("bio_col_name", lang=lang): n, t("bio_col_val", lang=lang): v,
+         t("bio_col_norm", lang=lang): c.get("normal_range", ""),
+         t("bio_col_status", lang=lang): status.get(c.get("level"), "—"),
+         t("bio_col_source", lang=lang): c.get("source", "")}
+        for n, v, c in rows
+    ])
+
+
+def show_alerts(patient: dict) -> bool:
+    alerts = find_alerts(patient)
+    for a in alerts:
+        if a["level"] == URGENT:
+            st.error(t(a["key"], lang=lang), icon=":material/emergency:")
+        else:
+            st.warning(t(a["key"], lang=lang), icon=":material/priority_high:")
+    return any(a["level"] == URGENT for a in alerts)
+
+
+def emergency_and_privacy() -> None:
+    st.write("")
+    with st.expander(t("emergency_title", lang=lang), icon=":material/call:"):
+        st.markdown(t("emergency_body", lang=lang))
+    st.caption(t("privacy_note", lang=lang))
+
+
+# ---------------------------------------------------------------- page
+st.markdown(f"## {t('screen_title', lang=lang)}")
 st.caption(t("screen_disclaimer", lang=lang))
 
 col_form, col_res = st.columns([5, 7], gap="large")
 
-# ---------------------------------------------------------------- form
 with col_form:
     st.markdown(f"**{t('btn_preset_profile', lang=lang)}**")
     with st.container(horizontal=True):
@@ -137,8 +192,7 @@ with col_form:
                                    format_func=lambda s: t("sex_male" if s == "m" else "sex_female", lang=lang),
                                    default="m" if cur["male"] else "f", key=f"sex_{uk}")
         c1, c3, c4 = st.columns(3)
-        age = c1.number_input(t("field_age", lang=lang), MIN_TRAIN_AGE, MAX_TRAIN_AGE,
-                              int(min(MAX_TRAIN_AGE, max(MIN_TRAIN_AGE, cur["age"]))), step=1,
+        age = c1.number_input(t("field_age", lang=lang), 18, 90, int(min(90, max(18, cur["age"]))), step=1,
                               help=t("field_age_help", lang=lang), key=f"age_{uk}")
         height = c3.number_input(t("calc_height_label", lang=lang), 120, 220, int(cur["height"]), step=1,
                                  key=f"height_{uk}")
@@ -154,14 +208,17 @@ with col_form:
                             help=t("field_bp_meds_help", lang=lang), key=f"meds_{uk}")
 
         st.markdown(f"##### {t('section_lab', lang=lang)}")
-        tc = lab_input("field_tot_chol", "totChol", cur["totChol"], (2.5, 12.0, 0.1), (100, 450, 1))
-        hdl = lab_input("field_hdl", "totChol", cur.get("HDL"), (0.5, 3.0, 0.05), (20, 120, 1), optional=True)
-        glu = lab_input("field_glucose", "glucose", cur["glucose"], (3.0, 20.0, 0.1), (55, 360, 1))
+        st.caption(t("section_lab_hint", lang=lang))
+        tc = lab_input("field_tot_chol", "totChol", cur.get("totChol"), (2.5, 12.0, 0.1), (100, 450, 1))
+        hdl = lab_input("field_hdl", "totChol", cur.get("HDL"), (0.5, 3.0, 0.05), (20, 120, 1))
+        glu = lab_input("field_glucose", "glucose", cur.get("glucose"), (3.0, 20.0, 0.1), (55, 360, 1))
         known_dm = st.toggle(t("field_known_diabetes", lang=lang), value=bool(cur["diabetes"]), key=f"dm_{uk}")
 
         st.markdown(f"##### {t('section_lifestyle', lang=lang)}")
         cigs = st.number_input(t("field_cigs_per_day", lang=lang), 0, 60, int(cur["cigsPerDay"]), step=1,
                                help=t("field_cigs_help", lang=lang), key=f"cigs_{uk}")
+        family = st.checkbox(t("field_family_history", lang=lang), value=bool(cur.get("family_history", 0)),
+                             help=t("field_family_history_help", lang=lang), key=f"fam_{uk}")
         prior_cvd = st.checkbox(t("field_prior_cvd", lang=lang), value=bool(cur.get("prior_cvd", 0)),
                                 help=t("field_prior_cvd_help", lang=lang), key=f"cvd_{uk}")
 
@@ -173,72 +230,95 @@ with col_form:
             "male": 1 if (sex or ("m" if cur["male"] else "f")) == "m" else 0,
             "age": int(age), "height": int(height), "weight": float(weight),
             "sysBP": float(sbp), "diaBP": float(dbp), "BPMeds": int(bp_meds),
-            "totChol": float(tc), "HDL": float(hdl) if hdl else None, "glucose": float(glu),
-            "diabetes": int(known_dm), "cigsPerDay": float(cigs), "prior_cvd": int(prior_cvd),
+            "totChol": tc, "HDL": hdl, "glucose": glu,
+            "diabetes": int(known_dm), "cigsPerDay": float(cigs),
+            "family_history": int(family), "prior_cvd": int(prior_cvd),
         })
-        cur = st.session_state["patient_data"]
 
-# ---------------------------------------------------------------- results
 patient = st.session_state["patient_data"]
 items = tuple(sorted(patient.items()))
 
 with col_res:
+    # People the models were not built for: guidance, alerts and markers, no scores.
+    out_of_scope = None
     if patient.get("prior_cvd"):
+        out_of_scope = ("prior_cvd_title", "prior_cvd_body")
+    elif not (MIN_TRAIN_AGE <= patient["age"] <= MAX_TRAIN_AGE):
+        out_of_scope = ("age_out_title", "age_out_body")
+    if out_of_scope:
+        show_alerts(patient)
         with st.container(border=True):
-            st.markdown(f"### :material/emergency: {t('prior_cvd_title', lang=lang)}")
-            st.write(t("prior_cvd_body", lang=lang))
+            st.markdown(f"### {t(out_of_scope[0], lang=lang)}")
+            st.write(t(out_of_scope[1], lang=lang))
+        st.markdown(f"**{t('tab_biomarkers', lang=lang)}**")
+        st.dataframe(markers_table(patient), hide_index=True, width="stretch")
+        emergency_and_privacy()
         st.stop()
 
     prediction, recs, xai = evaluate(items)
-    age_v = float(patient["age"])
+    has_urgent = show_alerts(patient)
+
     heart_age = prediction["heart_age"]
     ha_delta = prediction["heart_age_delta"]
     p_chd = prediction["p_chd"] * 100.0
     p_dm = prediction["p_diabetes"] * 100.0
-    life = calculate_life_expectancy_estimate(age_v, patient["male"], heart_age)
-
     if p_chd < 10.0:
-        cat_label, cat_color = t("card_chd_cat_low", lang=lang), "green"
+        cat_label, cat_color, band = t("card_chd_cat_low", lang=lang), "green", "low"
     elif p_chd < 20.0:
-        cat_label, cat_color = t("card_chd_cat_mod", lang=lang), "orange"
+        cat_label, cat_color, band = t("card_chd_cat_mod", lang=lang), "orange", "mid"
     else:
-        cat_label, cat_color = t("card_chd_cat_high", lang=lang), "red"
+        cat_label, cat_color, band = t("card_chd_cat_high", lang=lang), "red", "high"
 
-    if ha_delta >= 1.0:
-        sub_key = "verdict_sub_older"
-    elif ha_delta <= -1.0:
-        sub_key = "verdict_sub_younger"
-    else:
-        sub_key = "verdict_sub_same"
-    st.markdown(
-        f'<div class="yurak-verdict">{t("verdict_head", lang=lang, ha=f"{heart_age:.0f}")}</div>'
-        f'<div class="yurak-verdict-sub">{t(sub_key, lang=lang, age=int(age_v), diff=f"{abs(ha_delta):.1f}")}</div>',
-        unsafe_allow_html=True,
-    )
+    sub_key = "verdict_sub_older" if ha_delta >= 1.0 else ("verdict_sub_younger" if ha_delta <= -1.0
+                                                          else "verdict_sub_same")
+    with st.container(key=f"verdict_{band}"):
+        st.markdown(
+            f'<div class="yurak-verdict">{t("verdict_head", lang=lang, ha=f"{heart_age:.0f}")}</div>'
+            f'<div class="yurak-verdict-sub">'
+            f'{t(sub_key, lang=lang, age=int(patient["age"]), diff=f"{abs(ha_delta):.1f}")}</div>',
+            unsafe_allow_html=True,
+        )
+        if prediction["heart_age_method"] == "bmi":
+            st.caption(t("heart_age_bmi_note", lang=lang))
 
+    combined = (recs.get("combined_impact") or {}).get("deltas", {})
     with st.container(horizontal=True):
         with st.container(border=True):
             st.metric(t("res_label_chd", lang=lang), f"{p_chd:.1f}%", help=t("card_chd_help", lang=lang))
             st.badge(cat_label, color=cat_color)
         with st.container(border=True):
-            st.metric(t("res_label_life_exp", lang=lang), f"{life['life_estimate']:.1f}",
-                      help=t("card_life_exp_help", lang=lang))
-            d = life["delta"]
-            st.badge(t("life_vs_avg", lang=lang, val=f"{d:+.1f}"),
-                     color="red" if d <= -1 else ("green" if d >= 1 else "gray"))
+            gain = combined.get("delta_life_exp", 0.0)
+            st.metric(t("res_label_gain", lang=lang), f"+{gain:.1f}" if gain >= 0.1 else "—",
+                      help=t("card_gain_help", lang=lang))
+            st.badge(t("gain_badge" if gain >= 0.1 else "gain_badge_none", lang=lang),
+                     color="green" if gain >= 0.1 else "gray")
         with st.container(border=True):
             if patient["diabetes"]:
                 st.metric(t("res_label_diabetes", lang=lang), t("dm_known_value", lang=lang),
                           help=t("card_dm_known_help", lang=lang))
                 st.badge(t("dm_known_badge", lang=lang), color="gray")
+            elif not prediction["glucose_known"]:
+                st.metric(t("res_label_diabetes", lang=lang), "?", help=t("card_dm_unknown_help", lang=lang))
+                st.badge(t("dm_need_glucose", lang=lang), color="gray")
             else:
-                st.metric(t("res_label_diabetes", lang=lang), f"{p_dm:.1f}%", help=t("card_dm_help", lang=lang))
                 high_dm = p_dm >= 50.0 or prediction["diabetes_flag"]
+                st.metric(t("res_label_diabetes", lang=lang), f"{p_dm:.1f}%", help=t("card_dm_help", lang=lang))
                 st.badge(t("card_dm_high" if high_dm else "card_dm_low", lang=lang),
                          color="red" if high_dm else "green")
 
+    with st.container(border=True):
+        st.markdown(f"**{t('next_title', lang=lang)}**")
+        st.write(t(next_step_key(p_chd, has_urgent), lang=lang))
+        if patient.get("family_history"):
+            st.write(t("family_history_note", lang=lang))
+        if patient.get("totChol") is None or patient.get("glucose") is None:
+            st.write(t("labs_missing_note", lang=lang))
+
     grouped = group_attributions(xai["attributions_pp"])
-    drivers = sorted(((k, v) for k, v in grouped.items() if k not in ("age", "male")), key=lambda kv: kv[1], reverse=True)
+    # BPMeds is excluded: in Framingham, taking BP pills marks long-standing
+    # hypertension. Calling it the "main driver" could read as "pills are harmful".
+    drivers = sorted(((k, v) for k, v in grouped.items() if k not in ("age", "male", "BPMeds")),
+                     key=lambda kv: kv[1], reverse=True)
     if drivers and drivers[0][1] >= 0.5:
         st.markdown(t("driver_line", lang=lang, driver=t(f"feat_{drivers[0][0]}", lang=lang),
                       contrib=f"{drivers[0][1]:.1f}"))
@@ -279,8 +359,7 @@ with col_res:
                           delta=f"{dd['delta_chd_pp']:.1f} {t('sim_pp', lang=lang)}", delta_color="inverse", border=True)
                 st.metric(t("res_label_heart_age", lang=lang), f"{s['heart_age']:.1f}",
                           delta=f"{dd['delta_heart_age']:.1f}", delta_color="inverse", border=True)
-                st.metric(t("res_label_life_exp", lang=lang), f"{s['life_expectancy']:.1f}",
-                          delta=f"{dd['delta_life_exp']:+.1f}", border=True)
+                st.metric(t("res_label_gain", lang=lang), f"+{max(0.0, dd['delta_life_exp']):.1f}", border=True)
         else:
             st.info(t("steps_none_selected", lang=lang), icon=":material/touch_app:")
 
@@ -321,41 +400,8 @@ with tab_xai:
 
 with tab_bio:
     st.caption(t("biomarkers_desc", lang=lang))
-    sex_s = str(patient["male"])
-    status = {"ok": t("status_badge_ok", lang=lang), "warn": t("status_badge_warn", lang=lang),
-              "high": t("status_badge_high", lang=lang)}
-    bp_unit = {"en": "mmHg", "uz": "mm sim.ust."}.get(lang, "мм рт. ст.")
-
-    def lab_txt(mg, analyte):
-        return f"{from_mgdl(mg, analyte, units):.2f} {u_label}" if units == "mmol" else f"{mg:.0f} mg/dL"
-
-    bio = []
-    c = classify("bp", patient["sysBP"], sex=sex_s, secondary_value=patient["diaBP"], lang=lang)
-    bio.append((t("bio_marker_bp", lang=lang), f"{patient['sysBP']:.0f} / {patient['diaBP']:.0f} {bp_unit}", c))
-    c = classify("totChol", patient["totChol"], sex=sex_s, lang=lang)
-    bio.append((t("field_tot_chol", lang=lang), lab_txt(patient["totChol"], "totChol"), c))
-    if patient.get("HDL"):
-        c = classify("hdl", patient["HDL"], sex=sex_s, lang=lang)
-        bio.append((t("field_hdl", lang=lang), lab_txt(patient["HDL"], "totChol"), c))
-    c = classify("glucose", patient["glucose"], sex=sex_s, lang=lang)
-    bio.append((t("field_glucose", lang=lang), lab_txt(patient["glucose"], "glucose"), c))
-    c = classify("bmi", patient["BMI"], sex=sex_s, lang=lang)
-    c = {**c, "normal_range": "18.5–24.9 kg/m²"}
-    bio.append((t("bio_marker_bmi", lang=lang), f"{patient['BMI']:.1f} kg/m²", c))
-    smoke_c = {"level": "high" if patient["currentSmoker"] else "ok", "normal_range": t("bio_cessation_norm", lang=lang),
-               "source": "WHO FCTC / ESC 2021"}
-    smoke_v = (t("bio_smoker_val", lang=lang, cigs=int(patient["cigsPerDay"])) if patient["currentSmoker"]
-               else t("bio_nonsmoker_val", lang=lang))
-    bio.append((t("bio_marker_smoker", lang=lang), smoke_v, smoke_c))
-
-    df_bio = pd.DataFrame([
-        {t("bio_col_name", lang=lang): n, t("bio_col_val", lang=lang): v,
-         t("bio_col_norm", lang=lang): c.get("normal_range", ""), t("bio_col_status", lang=lang): status[c["level"]],
-         t("bio_col_source", lang=lang): c.get("source", "")}
-        for n, v, c in bio
-    ])
-    st.dataframe(df_bio, hide_index=True, width="stretch")
-    if not patient.get("HDL"):
+    st.dataframe(markers_table(patient), hide_index=True, width="stretch")
+    if not patient.get("HDL") and patient.get("totChol") is not None:
         st.caption(t("hdl_default_note", lang=lang))
 
 with tab_traj:
@@ -368,9 +414,9 @@ with tab_traj:
     max_age = float(traj["age"].max())
     layers = []
     if max_age > MAX_TRAIN_AGE:
-        band = pd.DataFrame({"x0": [float(MAX_TRAIN_AGE)], "x1": [max_age],
-                             "label": [t("traj_extrapolated", lang=lang)]})
-        layers.append(alt.Chart(band).mark_rect(color="#152238", opacity=0.06)
+        band_df = pd.DataFrame({"x0": [float(MAX_TRAIN_AGE)], "x1": [max_age],
+                                "label": [t("traj_extrapolated", lang=lang)]})
+        layers.append(alt.Chart(band_df).mark_rect(color="#152238", opacity=0.06)
                       .encode(x="x0:Q", x2="x1:Q", tooltip=["label:N"]))
     layers.append(
         alt.Chart(traj).mark_line(point=True, strokeWidth=3).encode(
@@ -408,3 +454,5 @@ with tab_exp:
                 file_name="yurak_fhir_bundle.json", mime="application/json",
                 icon=":material/data_object:", width="stretch",
             )
+
+emergency_and_privacy()

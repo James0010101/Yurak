@@ -6,7 +6,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-3572A5?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![Pure NumPy](https://img.shields.io/badge/ML-Pure%20NumPy-013243?style=flat-square&logo=numpy&logoColor=white)](#)
-[![Tests](https://img.shields.io/badge/Tests-50%20passed-00e68a?style=flat-square)](#-reproduce-from-scratch)
+[![Tests](https://img.shields.io/badge/Tests-59%20passed-00e68a?style=flat-square)](#-reproduce-from-scratch)
 [![License](https://img.shields.io/badge/License-Research-8b949e?style=flat-square)](#)
 [![Trilingual](https://img.shields.io/badge/i18n-RU%20·%20UZ%20·%20EN-ffb800?style=flat-square)](#)
 [![Live app](https://img.shields.io/badge/Live%20app-yurak--uz.streamlit.app-0E6E6B?style=flat-square&logo=streamlit&logoColor=white)](https://yurak-uz.streamlit.app)
@@ -29,10 +29,26 @@ The clinical pipeline combines the neural network's predictions with the **D'Ago
 
 ## What You Enter, and Why
 
-Every field on the form changes at least one result. Each effect was checked on the trained model by moving the marker from a typical low to a typical high value.
+Built for a person, not only a clinician: **blood tests are optional**. Every field changes at least one result (checked on the trained model by moving each marker from a typical low to a typical high value).
 
-| Field | CHD risk | Diabetes risk | Heart age & life estimate |
+| Field | Heart risk | Diabetes risk | Heart age |
 |:---|:---:|:---:|:---:|
+| Age, sex | ✓ | ✓ | ✓ |
+| Upper (systolic) pressure, BP medication | ✓ | ✓ | ✓ |
+| Lower (diastolic) pressure | ✓ weak | — | — |
+| Height & weight (BMI) | ✓ | ✓ | ✓ if no cholesterol |
+| Total cholesterol — optional | ✓ | ✓ | ✓ |
+| HDL — optional, defaults to 1.16 mmol/L | — | — | ✓ |
+| Fasting glucose — optional (≥ 7.0 mmol/L counts as diabetes) | ✓ | ✓ | ✓ |
+| Diagnosed diabetes | — | — | ✓ |
+| Cigarettes per day | ✓ | — | ✓ |
+| Early heart disease in parents/siblings | note for the doctor | | |
+
+- **No blood test?** Heart age switches to the D'Agostino 2008 *office (BMI) model* — coefficients and the reference person (SBP 125, BMI 22.5) verified against framinghamheartstudy.org; the network receives training medians, exactly how missing values were imputed in training. Unknown values never appear as "risk factors" and are never exported to FHIR.
+- **Red flags first:** BP ≥ 180/110, fasting glucose ≥ 7.0 mmol/L without a diagnosis, total cholesterol ≥ 7.5 mmol/L and BMI ≥ 40 show a warning before any score, and every result ends with a plain *what to do next* plus heart-attack/stroke signs (ambulance **103**).
+- **Not for everyone:** after a heart attack/stroke, or outside ages 32–70, the app shows guidance and the markers table instead of numbers the models can't support.
+
+---|:---:|:---:|:---:|
 | Age, sex | ✓ | ✓ | ✓ |
 | Upper (systolic) pressure, BP medication | ✓ | ✓ | ✓ |
 | Lower (diastolic) pressure | ✓ weak | — | — |
@@ -138,7 +154,7 @@ Any researcher can reproduce training and validation in 4 commands:
 python scripts/prepare_data.py          # Stratified split 70/15/15
 python scripts/fetch_who_life_table.py  # WHO mortality tables for Uzbekistan
 python scripts/train_model.py           # Train neural network, compute ROC-AUC with CI
-pytest -q                               # Run all 50 automated tests
+pytest -q                               # Run all 59 automated tests
 ```
 
 ---
@@ -161,7 +177,7 @@ Yurak/
 │   ├── units.py                # mmol/L ⇄ mg/dL bidirectional conversion
 │   └── ...                     # config, i18n, thresholds
 ├── scripts/                    # Data prep, WHO fetch, training
-├── tests/                      # 50 automated tests (clinical, ML, XAI, UI)
+├── tests/                      # 59 automated tests (clinical, ML, XAI, UI)
 ├── data/                       # Framingham dataset, WHO tables
 ├── models/                     # Weights, metrics, model card
 └── i18n/                       # ru.json, uz.json, en.json

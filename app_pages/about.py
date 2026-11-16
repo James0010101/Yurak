@@ -57,5 +57,3 @@ with st.container(border=True):
         st.markdown(t("about_mentor_contact", lang=lang))
         st.markdown(t("about_mentor_repo", lang=lang))
 
-st.divider()
-st.caption(t("footer_disclaimer", lang=lang))

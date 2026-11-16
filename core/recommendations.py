@@ -71,8 +71,9 @@ def get_candidate_rules(patient: Dict[str, Any]) -> List[ClinicalIntervention]:
         ))
 
     # 3. Lipid Profile Optimization
-    tot_chol = float(patient.get("totChol", 200.0))
-    if tot_chol >= 200.0:  # >= 5.2 mmol/L
+    tot_chol = patient.get("totChol", 200.0)
+    if tot_chol is not None and float(tot_chol) >= 200.0:  # >= 5.2 mmol/L; unknown -> no rule
+        tot_chol = float(tot_chol)
         target_chol = max(160.0, round(tot_chol * 0.80, 1))  # 20% reduction target
         candidates.append(ClinicalIntervention(
             id="lipid_management",
@@ -87,7 +88,9 @@ def get_candidate_rules(patient: Dict[str, Any]) -> List[ClinicalIntervention]:
     # 4. Weight Management
     bmi = float(patient.get("BMI", 25.0))
     if bmi >= 25.0:
-        target_bmi = min(bmi, 24.5)
+        # A realistic goal: lose ~10% of body weight (WHO/ESC advise 5–10%),
+        # not "drop straight to BMI 24.5", which for BMI 32 means losing a quarter of the body.
+        target_bmi = round(max(24.9, bmi * 0.9), 1)
         candidates.append(ClinicalIntervention(
             id="weight_reduction",
             title_key="rec_weight_title",
@@ -99,9 +102,10 @@ def get_candidate_rules(patient: Dict[str, Any]) -> List[ClinicalIntervention]:
         ))
 
     # 5. Glycemic Control
-    glucose = float(patient.get("glucose", 90.0))
+    glucose = patient.get("glucose", 90.0)
     has_dm = int(patient.get("diabetes", 0)) == 1
-    if glucose >= 100.0 or has_dm:  # >= 5.6 mmol/L impaired fasting glucose
+    if glucose is not None and (float(glucose) >= 100.0 or has_dm):  # >= 5.6 mmol/L impaired fasting glucose
+        glucose = float(glucose)
         target_glucose = min(glucose, 95.0)
         candidates.append(ClinicalIntervention(
             id="glycemic_control",

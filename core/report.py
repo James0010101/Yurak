@@ -65,8 +65,8 @@ def generate_fhir_bundle(
 
     sbp = float(patient.get("sysBP", 120.0))
     dbp = float(patient.get("diaBP", 80.0))
-    tot_chol = float(patient.get("totChol", 200.0))
-    glucose = float(patient.get("glucose", 90.0))
+    tot_chol = patient.get("totChol", 200.0)
+    glucose = patient.get("glucose", 90.0)
     bmi = float(patient.get("BMI", 25.0))
     hdl = patient.get("HDL")
 
@@ -110,8 +110,11 @@ def generate_fhir_bundle(
     # Verified LOINC observations
     add_obs("8480-6", "Systolic blood pressure", sbp, "mm[Hg]")
     add_obs("8462-4", "Diastolic blood pressure", dbp, "mm[Hg]")
-    add_obs("2093-3", "Cholesterol in Serum or Plasma", tot_chol, "mg/dL")
-    add_obs("1558-6", "Fasting glucose in Serum or Plasma", glucose, "mg/dL")
+    # Only values the person actually entered are exported, never imputed ones.
+    if tot_chol is not None:
+        add_obs("2093-3", "Cholesterol in Serum or Plasma", float(tot_chol), "mg/dL")
+    if glucose is not None:
+        add_obs("1558-6", "Fasting glucose in Serum or Plasma", float(glucose), "mg/dL")
     add_obs("39156-5", "Body mass index (BMI)", bmi, "kg/m2")
     if hdl:
         add_obs("2085-9", "Cholesterol in HDL [Mass/volume] in Serum or Plasma", float(hdl), "mg/dL")
@@ -351,11 +354,14 @@ def generate_pdf_report(
     smoker = t("smoker_yes", lang=lang) if int(patient.get("currentSmoker", 0)) == 1 else t("smoker_no", lang=lang)
     bp_meds = t("meds_yes", lang=lang) if int(patient.get("BPMeds", 0)) == 1 else t("meds_no", lang=lang)
 
-    raw_tc = float(patient.get("totChol", 200.0))
-    raw_glu = float(patient.get("glucose", 90.0))
-    val_tc = from_mgdl(raw_tc, "totChol", units)
-    val_glu = from_mgdl(raw_glu, "glucose", units)
+    raw_tc = patient.get("totChol", 200.0)
+    raw_glu = patient.get("glucose", 90.0)
     unit_label = "mmol/L" if (units == "mmol" and lang == "en") else ("mmol/l" if (units == "mmol" and lang == "uz") else ("ммоль/л" if units == "mmol" else "mg/dL"))
+    def lab_text(mg, analyte):
+        if mg is None:
+            return t("not_entered", lang=lang)
+        return f"{from_mgdl(float(mg), analyte, units):.2f} {unit_label}"
+
     raw_hdl = patient.get("HDL")
     hdl_text = (
         f"{from_mgdl(float(raw_hdl), 'totChol', units):.2f} {unit_label}" if raw_hdl
@@ -385,13 +391,13 @@ def generate_pdf_report(
         ],
         [
             Paragraph(t("report_param_chol", lang=lang), cell_bold),
-            Paragraph(f"{val_tc:.2f} {unit_label}", cell_norm),
+            Paragraph(lab_text(raw_tc, "totChol"), cell_norm),
             Paragraph(t("report_param_hdl", lang=lang), cell_bold),
             Paragraph(hdl_text, cell_norm),
         ],
         [
             Paragraph(t("report_param_glu", lang=lang), cell_bold),
-            Paragraph(f"{val_glu:.2f} {unit_label}", cell_norm),
+            Paragraph(lab_text(raw_glu, "glucose"), cell_norm),
             Paragraph(t("report_param_dm", lang=lang), cell_bold),
             Paragraph(t("report_yes", lang=lang) if patient.get("diabetes") else t("report_no", lang=lang), cell_norm),
         ],

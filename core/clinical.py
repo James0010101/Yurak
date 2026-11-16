@@ -25,7 +25,9 @@ DAGOSTINO_COEFFS = {
         "beta_smk": 0.65451,
         "beta_dm": 0.57367,
         "s0_10": 0.88936,
-        "l_mean": 23.9388,
+        # 23.9802 per the Framingham Heart Study risk-function page. An earlier
+        # version used 23.9388, which is the constant of the BMI (office) model.
+        "l_mean": 23.9802,
     },
     "female": {
         "beta_age": 2.32888,
@@ -145,6 +147,55 @@ def calculate_heart_age(
 
 # Convenient alias
 calculate_framingham_heart_age = calculate_heart_age
+
+
+# D'Agostino 2008 "simple office-based" model: BMI replaces the lipids, so it
+# works for people without a blood test. Coefficients, baseline survival and
+# means verified against framinghamheartstudy.org (CVD 10-year risk page).
+DAGOSTINO_BMI_COEFFS = {
+    "male": {
+        "beta_age": 3.11296, "beta_bmi": 0.79277,
+        "beta_sbp_untreated": 1.85508, "beta_sbp_treated": 1.92672,
+        "beta_smk": 0.70953, "beta_dm": 0.53160,
+        "s0_10": 0.88431, "l_mean": 23.9388,
+    },
+    "female": {
+        "beta_age": 2.72107, "beta_bmi": 0.51125,
+        "beta_sbp_untreated": 2.81291, "beta_sbp_treated": 2.88267,
+        "beta_smk": 0.61868, "beta_dm": 0.77763,
+        "s0_10": 0.94833, "l_mean": 26.0145,
+    },
+}
+# Reference ("normal") person of the Framingham BMI calculator spreadsheet
+# (gencardio_bmi.xls): SBP 125 untreated, BMI 22.5, non-smoker, no diabetes.
+OPTIMAL_BMI = 22.5
+
+
+def _bmi_linear_predictor(age, sex, sbp, bp_meds, bmi, smoker, diabetes) -> float:
+    c = DAGOSTINO_BMI_COEFFS[_get_sex_key(sex)]
+    beta_sbp = c["beta_sbp_treated"] if bp_meds else c["beta_sbp_untreated"]
+    return (
+        c["beta_age"] * math.log(max(1.0, float(age)))
+        + c["beta_bmi"] * math.log(max(1.0, float(bmi)))
+        + beta_sbp * math.log(max(1.0, float(sbp)))
+        + c["beta_smk"] * (1.0 if smoker else 0.0)
+        + c["beta_dm"] * (1.0 if diabetes else 0.0)
+    )
+
+
+def calculate_dagostino_risk_bmi(age, sex, sbp, bp_meds, bmi, smoker=0, diabetes=0) -> float:
+    """10-year general CVD risk, D'Agostino 2008 office (BMI) model."""
+    c = DAGOSTINO_BMI_COEFFS[_get_sex_key(sex)]
+    L = _bmi_linear_predictor(age, sex, sbp, bp_meds, bmi, smoker, diabetes)
+    return min(1.0, max(0.0, 1.0 - math.pow(c["s0_10"], math.exp(L - c["l_mean"]))))
+
+
+def calculate_heart_age_bmi(age, sex, sbp, bp_meds, bmi, smoker=0, diabetes=0) -> float:
+    """Heart age from the BMI model: the age at which the reference person has the same risk."""
+    c = DAGOSTINO_BMI_COEFFS[_get_sex_key(sex)]
+    c_ref = c["beta_bmi"] * math.log(OPTIMAL_BMI) + c["beta_sbp_untreated"] * math.log(125.0)
+    L = _bmi_linear_predictor(age, sex, sbp, bp_meds, bmi, smoker, diabetes)
+    return min(95.0, max(18.0, math.exp((L - c_ref) / c["beta_age"])))
 
 # Cache WHO life table in memory
 
