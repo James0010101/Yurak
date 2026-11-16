@@ -14,6 +14,7 @@ DEFAULT_LANGUAGE = "ru"
 
 # In-memory translations cache
 _TRANSLATIONS_CACHE: Dict[str, Dict[str, str]] = {}
+_CACHE_MTIME: Dict[str, float] = {}
 
 
 def load_translations(lang: str) -> Dict[str, str]:
@@ -24,18 +25,22 @@ def load_translations(lang: str) -> Dict[str, str]:
     if lang_code not in SUPPORTED_LANGUAGES:
         lang_code = DEFAULT_LANGUAGE
 
-    if lang_code in _TRANSLATIONS_CACHE:
-        return _TRANSLATIONS_CACHE[lang_code]
-
     file_path = I18N_DIR / f"{lang_code}.json"
     if not file_path.exists():
         logger.warning(f"Translation file not found at {file_path}, falling back to empty dict.")
         return {}
 
+    # Cache is keyed by file mtime so a redeploy with a stale process never serves old strings.
+    mtime = file_path.stat().st_mtime
+    cached = _TRANSLATIONS_CACHE.get(lang_code)
+    if cached is not None and _CACHE_MTIME.get(lang_code) == mtime:
+        return cached
+
     with open(file_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
     _TRANSLATIONS_CACHE[lang_code] = data
+    _CACHE_MTIME[lang_code] = mtime
     return data
 
 
